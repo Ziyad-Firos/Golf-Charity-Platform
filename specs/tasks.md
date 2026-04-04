@@ -1,0 +1,394 @@
+# Implementation Plan: Golf Charity Platform
+
+## Overview
+
+Incremental implementation of the Golf Charity Platform — a subscription-driven React + Node.js + PostgreSQL (Supabase) web app with Stripe payments, a monthly draw engine, and charity fundraising. Each task builds on the previous, wiring components together progressively until the full system is integrated and deployed.
+
+## Tasks
+
+- [x] 1. Project scaffolding and environment setup
+  - Initialise monorepo with `client/` (Vite + React 18) and `server/` (Node.js + Express) directories
+  - Configure `package.json` workspaces, shared ESLint + Prettier, and TypeScript `tsconfig.json` for both packages
+  - Add `.env.example` files for both packages documenting all required environment variables (DATABASE_URL, JWT_SECRET, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, RESEND_API_KEY, VITE_API_URL)
+  - Install core server dependencies: `express`, `pg`, `bcrypt`, `jsonwebtoken`, `stripe`, `helmet`, `express-rate-limit`, `cors`, `express-validator`, `validator`
+  - Install core client dependencies: `react-router-dom`, `zustand`, `@tanstack/react-query`, `axios`, `react-hook-form`, `tailwindcss`, `@stripe/stripe-js`, `@stripe/react-stripe-js`
+  - Configure Tailwind CSS with `tailwind.config.js` and base styles
+  - Set up Vercel `vercel.json` with rewrite rules routing `/api/*` to the Express serverless entry point
+  - _Requirements: 17.1, 17.2, 17.3, 18.3_
+
+- [x] 2. Database schema and migrations
+  - [x] 2.1 Create all 9 PostgreSQL tables via SQL migration files
+    - Write `migrations/001_initial_schema.sql` containing all CREATE TABLE statements: `subscribers`, `subscription_state_log`, `subscription_plans`, `charities`, `charity_events`, `score_entries`, `draws`, `draw_winners`, `charity_contributions`, `notification_log`
+    - Add all CHECK constraints, foreign keys, indexes (including `idx_score_entries_subscriber_date`), and UNIQUE constraints as defined in the design schema
+    - Write `migrations/002_seed_plans.sql` to insert the two subscription plan rows (monthly, yearly) with placeholder Stripe price IDs
+    - _Requirements: 2.9, 3.8, 5.1, 6.2, 18.1, 18.2_
+  - [x] 2.2 Create database client module
+    - Write `server/src/db/client.ts` exporting a configured `pg.Pool` instance using `DATABASE_URL` from environment
+    - Add a typed `query` helper wrapping `pool.query` for parameterised queries
+    - _Requirements: 17.5_
+
+- [x] 3. Auth_Service — registration, login, and JWT middleware
+  - [x] 3.1 Implement registration endpoint `POST /api/auth/register`
+    - Validate all fields with `express-validator`: email format, password min-length 8, first/last name required
+    - Hash password with `bcrypt` at cost factor 12
+    - Insert subscriber row; return 409 if email already exists
+    - Issue JWT access token (15 min, HS256) and set HttpOnly refresh token cookie (7 days)
+    - _Requirements: 1.1, 1.2, 17.4, 17.5_
+  - [ ]* 3.2 Write property test for registration validation (Property 1)
+    - **Property 1: Validation errors cover all invalid fields**
+    - **Validates: Requirements 1.2**
+  - [x] 3.3 Implement login endpoint `POST /api/auth/login`
+    - Look up subscriber by email; compare password with `bcrypt.compare`
+    - Return the same generic error message for any mismatch (wrong email, wrong password, or both)
+    - Issue new access + refresh tokens on success
+    - _Requirements: 1.3, 1.4_
+  - [ ]* 3.4 Write property test for generic auth error message (Property 2)
+    - **Property 2: Generic authentication error message**
+    - **Validates: Requirements 1.4**
+  - [x] 3.5 Implement `POST /api/auth/refresh`, `POST /api/auth/logout`, and `GET /api/auth/me`
+    - Refresh: validate HttpOnly cookie, issue new access token
+    - Logout: clear refresh cookie
+    - Me: return current subscriber profile from JWT sub claim
+    - _Requirements: 1.6, 1.7_
+  - [x] 3.6 Implement `authenticateToken` and `requireAdmin` middleware
+    - `authenticateToken`: verify JWT signature and expiry; attach `req.user`; return 401 on failure
+    - `requireAdmin`: check `req.user.role === 'admin'`; return 403 otherwise
+    - Apply `authenticateToken` to all protected routes; apply `requireAdmin` to all `/api/admin/*` routes
+    - Apply `express-rate-limit` (10 req / 15 min) to auth endpoints
+    - _Requirements: 1.5, 1.7, 17.2_
+  - [ ]* 3.7 Write property test for protected route JWT enforcement (Property 3)
+    - **Property 3: All protected routes require a valid JWT**
+    - **Validates: Requirements 1.7**
+
+- [x] 4. Checkpoint — Auth layer complete
+  - Ensure all auth unit tests pass, JWT middleware correctly gates routes, ask the user if questions arise.
+
+- [x] 5. Subscription_Service — plans, Stripe Checkout, webhooks, state machine
+  - [x] 5.1 Implement `GET /api/subscriptions/plans`
+    - Query `subscription_plans` table and return active plans
+    - _Requirements: 2.1_
+  - [x] 5.2 Implement `POST /api/subscriptions/checkout`
+    - Create a Stripe Checkout Session with the selected `stripe_price_id`; attach `client_reference_id` = subscriber UUID
+    - Return the session URL for frontend redirect
+    - _Requirements: 2.2_
+  - [x] 5.3 Implement `POST /api/subscriptions/webhook` (raw body parser)
+    - Verify Stripe signature with `stripe.webhooks.constructEvent`
+    - Handle `checkout.session.completed` → set state to `active`, store `stripe_customer_id` and `stripe_subscription_id`
+    - Handle `invoice.payment_failed` → set state to `lapsed`, trigger `sendPaymentFailure`
+    - Handle `customer.subscription.deleted` → set state to `inactive`
+    - Handle `invoice.payment_succeeded` (renewal) → ensure state is `active`, trigger `sendRenewalConfirmation`
+    - Write every state transition to `subscription_state_log`
+    - _Requirements: 2.3, 2.4, 2.6, 2.7, 2.8, 2.9, 10.4_
+  - [x] 5.4 Implement `GET /api/subscriptions/status`, `POST /api/subscriptions/cancel`, and `PATCH /api/admin/subscriptions/:id/state`
+    - Status: return current subscriber's state and next renewal date from Stripe
+    - Cancel: call `stripe.subscriptions.update` with `cancel_at_period_end: true`; set state to `cancelled` at period end
+    - Admin override: validate new state is one of the four valid values; write to log with admin ID
+    - _Requirements: 2.8, 2.9, 9.1, 10.4_
+  - [x] 5.5 Add subscription-state guard middleware
+    - After `authenticateToken`, check `subscriber.subscription_state === 'active'` on all subscriber-facing feature routes
+    - Return 403 `SUBSCRIPTION_INACTIVE` for non-active subscribers
+    - _Requirements: 2.5_
+  - [ ]* 5.6 Write property test for subscription state enum invariant (Property 5)
+    - **Property 5: Subscription state is always a valid enum value**
+    - **Validates: Requirements 2.9**
+  - [ ]* 5.7 Write property test for non-active subscriber access denial (Property 4)
+    - **Property 4: Non-active subscribers are denied access to platform features**
+    - **Validates: Requirements 2.5**
+
+- [x] 6. Score_Service — CRUD, rolling window, validation
+  - [x] 6.1 Implement `POST /api/scores` with full validation
+    - Validate `stableford_score` is integer in [1, 45]; validate `played_on` is a valid date
+    - If subscriber already has 5 entries, delete the oldest (`played_on ASC LIMIT 1`) before inserting
+    - Otherwise insert directly
+    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.8_
+  - [ ]* 6.2 Write property test for Stableford score validation (Property 6)
+    - **Property 6: Stableford score validation accepts [1,45] and rejects all others**
+    - **Validates: Requirements 3.1, 3.3**
+  - [ ]* 6.3 Write property test for rolling window invariant (Property 7)
+    - **Property 7: Score history rolling window invariant**
+    - **Validates: Requirements 3.4, 3.5, 3.8**
+  - [x] 6.4 Implement `GET /api/scores`, `PUT /api/scores/:id`, `DELETE /api/scores/:id`
+    - GET: return subscriber's scores ordered by `played_on DESC`
+    - PUT: apply same validation as POST; verify ownership before update
+    - DELETE: verify ownership before delete
+    - _Requirements: 3.6, 3.7_
+  - [ ]* 6.5 Write property test for score history sort order (Property 8)
+    - **Property 8: Score history is always sorted newest-first**
+    - **Validates: Requirements 3.6**
+  - [x] 6.6 Implement admin score endpoints `GET /api/admin/scores/:subscriberId` and `PUT /api/admin/scores/:id`
+    - Apply identical validation rules as subscriber-initiated entries
+    - _Requirements: 10.3_
+
+- [x] 7. Checkpoint — Score layer complete
+  - Ensure all score validation and rolling-window tests pass, ask the user if questions arise.
+
+- [x] 8. Charity_Service — listings, profiles, contribution logic, featured charity
+  - [x] 8.1 Implement public charity endpoints
+    - `GET /api/charities`: return all active charities; support `?search=` query param (case-insensitive ILIKE on name and description); support `?filter=` param
+    - `GET /api/charities/:id`: return charity with description, image_urls, and joined charity_events
+    - `GET /api/charities/featured`: return the single charity where `is_featured = true`
+    - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 16.3_
+  - [ ]* 8.2 Write property test for charity search correctness (Property 16)
+    - **Property 16: Charity search returns all and only matching results**
+    - **Validates: Requirements 7.2**
+  - [ ]* 8.3 Write property test for charity profile required fields (Property 17)
+    - **Property 17: Charity profile response contains all required fields**
+    - **Validates: Requirements 7.4**
+  - [x] 8.4 Implement subscriber charity endpoints
+    - `GET /api/subscriber/charity`: return subscriber's selected charity and contribution percentage
+    - `PUT /api/subscriber/charity`: update `charity_id` on subscriber row
+    - `PUT /api/subscriber/charity/contribution`: validate percentage is between 10 and 100; update `charity_contribution_pct`
+    - `POST /api/charities/:id/donate`: create Stripe PaymentIntent for independent donation; record in `charity_contributions`
+    - _Requirements: 6.1, 6.3, 6.4, 6.5, 9.3_
+  - [ ]* 8.5 Write property test for charity contribution minimum floor (Property 15)
+    - **Property 15: Charity contribution is always at least 10%**
+    - **Validates: Requirements 6.2**
+  - [x] 8.6 Implement admin charity endpoints
+    - `POST /api/admin/charities`: create charity with name, description, image_urls, optional events
+    - `PUT /api/admin/charities/:id`: update charity details
+    - `DELETE /api/admin/charities/:id`: count active subscribers with this charity; reject with `CHARITY_HAS_SUBSCRIBERS` (409) if count > 0
+    - `PUT /api/admin/charities/:id/feature`: set `is_featured = true` on target, `false` on all others (single featured at a time)
+    - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5_
+  - [ ]* 8.7 Write property test for charity deletion guard (Property 19)
+    - **Property 19: Charity deletion blocked when active subscribers exist**
+    - **Validates: Requirements 12.3, 12.4**
+
+- [~] 9. Draw_Engine — number generation, match evaluation, prize pool, jackpot carry-forward
+  - [ ] 9.1 Implement random draw number generation
+    - Use Fisher-Yates shuffle over `[1..45]` with `crypto.randomInt`; return first 5 elements
+    - _Requirements: 4.1, 4.2_
+  - [~] 9.2 Implement algorithmic (weighted) draw number generation
+    - Build frequency map from all active subscribers' score histories; assign weight = max(freq, 1) per number
+    - Perform weighted sampling without replacement using `crypto.randomInt`
+    - _Requirements: 4.1, 4.3_
+  - [ ]* 9.3 Write property test for draw number output invariants (Property 9)
+    - **Property 9: Draw number output invariants (both modes)**
+    - **Validates: Requirements 4.2, 4.3**
+  - [~] 9.4 Implement match evaluation function
+    - For each active subscriber, compute intersection of their score values and draw numbers
+    - Return winner records for intersections of size ≥ 3 with correct `match_tier`
+    - _Requirements: 4.5, 4.6_
+  - [ ]* 9.5 Write property test for match evaluation correctness (Property 10)
+    - **Property 10: Match evaluation correctness**
+    - **Validates: Requirements 4.5**
+  - [ ]* 9.6 Write property test for match tier equals intersection size (Property 11)
+    - **Property 11: Match tier equals intersection size**
+    - **Validates: Requirements 4.6**
+  - [~] 9.7 Implement prize pool calculation and distribution
+    - Sum `price_pence * prize_pool_contribution_pct / 100` across active subscribers' plans; add jackpot carry-forward
+    - Allocate 40% tier-5, 35% tier-4, 25% tier-3
+    - Divide each tier equally among winners in that tier
+    - If no tier-5 winner, set `jackpot_carryforward` for next draw
+    - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7_
+  - [ ]* 9.8 Write property test for prize pool tier allocation percentages (Property 12)
+    - **Property 12: Prize pool tier allocation percentages**
+    - **Validates: Requirements 5.2, 5.3, 5.4**
+  - [ ]* 9.9 Write property test for equal prize sharing within a tier (Property 13)
+    - **Property 13: Equal prize sharing within a tier**
+    - **Validates: Requirements 5.5**
+  - [ ]* 9.10 Write property test for jackpot carry-forward accumulation (Property 14)
+    - **Property 14: Jackpot carry-forward accumulates correctly**
+    - **Validates: Requirements 5.6**
+  - [~] 9.11 Implement draw API endpoints
+    - `GET /api/draws`: list all published draws
+    - `GET /api/draws/:id`: draw detail with results
+    - `POST /api/admin/draws/simulate`: run generation + evaluation + prize calc in-memory; return preview without DB writes
+    - `POST /api/admin/draws/publish`: persist draw, winners, and prize amounts; enforce one draw per calendar month (409 `DRAW_ALREADY_PUBLISHED` if duplicate); trigger `sendDrawResults`
+    - `GET /api/admin/draws/:id/winners`: return winners with payment state
+    - _Requirements: 4.4, 4.5, 4.7, 4.8, 11.1, 11.2, 11.3, 11.4_
+
+- [~] 10. Checkpoint — Draw Engine complete
+  - Ensure all draw generation, match evaluation, and prize pool tests pass, ask the user if questions arise.
+
+- [~] 11. Winner Verification — upload, admin review, payment state
+  - [~] 11.1 Implement winner verification submission `POST /api/winners/:id/verify`
+    - Validate file MIME type (image/png, image/jpeg) and size (max 5 MB)
+    - Upload to Supabase Storage; store URL in `draw_winners.verification_screenshot_url`
+    - Set `payment_state = 'pending'`; record `verification_submitted_at`
+    - _Requirements: 8.1, 8.2_
+  - [~] 11.2 Implement admin winner management endpoints
+    - `GET /api/admin/winners`: list all winners across draws with match tier, prize amount, payment state
+    - `PATCH /api/admin/winners/:id/approve`: set `payment_state = 'verified'`; record `reviewed_by` and `reviewed_at`; trigger `sendWinnerNotification`
+    - `PATCH /api/admin/winners/:id/reject`: set `payment_state = 'rejected'`; record rejection reason; trigger `sendVerificationRejection`
+    - `POST /api/admin/winners/:id/proof`: upload payment proof to Supabase Storage; set `payment_state = 'paid'`
+    - _Requirements: 8.3, 8.4, 8.5, 13.1, 13.2, 13.3, 13.4, 13.5_
+  - [ ]* 11.3 Write property test for payment processing restricted to verified winners (Property 18)
+    - **Property 18: Payment processing restricted to verified winners**
+    - **Validates: Requirements 8.5**
+
+- [~] 12. Notification_Service — all 5 email trigger types
+  - [~] 12.1 Create `server/src/services/notification.service.ts`
+    - Implement `sendRenewalConfirmation(subscriberId)`: fetch subscriber email; send renewal confirmation via Resend/SendGrid; log to `notification_log`
+    - Implement `sendPaymentFailure(subscriberId)`: send payment failure email; log result
+    - Implement `sendDrawResults(drawId)`: fetch all active subscribers; send draw results email to each; log results
+    - Implement `sendWinnerNotification(winnerId)`: send winner email prompting verification upload; log result
+    - Implement `sendVerificationRejection(winnerId, reason)`: send rejection email with reason; log result
+    - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.5_
+  - [~] 12.2 Wire notification calls into service layer
+    - Confirm `sendRenewalConfirmation` is called from Stripe `invoice.payment_succeeded` webhook handler
+    - Confirm `sendPaymentFailure` is called from `invoice.payment_failed` webhook handler
+    - Confirm `sendDrawResults` is called from draw publish endpoint
+    - Confirm `sendWinnerNotification` is called from winner approve endpoint
+    - Confirm `sendVerificationRejection` is called from winner reject endpoint
+    - _Requirements: 4.8, 15.1, 15.2, 15.3, 15.4, 15.5_
+
+- [~] 13. Checkpoint — Backend API complete
+  - Ensure all backend routes are wired, middleware applied, and integration tests pass, ask the user if questions arise.
+
+- [~] 14. Frontend — shared infrastructure and auth pages
+  - [~] 14.1 Set up React app structure
+    - Create directory structure: `components/ui/`, `components/layout/`, `components/auth/`, `pages/public/`, `pages/auth/`, `pages/dashboard/`, `pages/admin/`, `hooks/`, `store/`, `api/`, `utils/`
+    - Implement `api/client.ts`: Axios instance with base URL from `VITE_API_URL`; request interceptor attaches `Authorization: Bearer <token>` from Zustand store; response interceptor handles 401 by attempting token refresh
+    - Implement `store/authStore.ts`: Zustand store with `user`, `token`, `role` fields; persisted to `localStorage`
+    - _Requirements: 17.1, 18.3_
+  - [~] 14.2 Implement reusable UI primitives
+    - Create `Button`, `Input`, `Modal`, `Badge`, `Spinner`, `Toast` components in `components/ui/`
+    - Create `Header`, `Footer`, `PageWrapper`, `ProtectedRoute` in `components/layout/`
+    - `ProtectedRoute`: redirect to `/login` if no token; redirect to `/login` if subscription inactive (for subscriber routes); redirect to `/` if non-admin accesses `/admin`
+    - _Requirements: 17.1_
+  - [~] 14.3 Implement multi-step registration flow
+    - Step 1: personal details form (name, email, password) with `react-hook-form` validation
+    - Step 2: plan selector showing monthly and yearly options from `GET /api/subscriptions/plans`
+    - Step 3: charity selector with search input calling `GET /api/charities?search=`
+    - Step 4: redirect to Stripe Checkout URL from `POST /api/subscriptions/checkout`; on return, poll subscription status and redirect to `/dashboard`
+    - _Requirements: 1.1, 1.2, 2.1, 2.2, 2.3, 6.1_
+  - [~] 14.4 Implement login page
+    - Login form with email + password; call `POST /api/auth/login`; store token in Zustand; redirect to `/dashboard`
+    - Display generic error message on failure (no field-level hint)
+    - _Requirements: 1.3, 1.4_
+
+- [~] 15. Frontend — User Dashboard (all 5 modules)
+  - [~] 15.1 Implement subscription status module
+    - Display current state badge (active / lapsed / inactive / cancelled) and next renewal date
+    - Show cancel subscription button; confirm before calling `POST /api/subscriptions/cancel`
+    - _Requirements: 9.1_
+  - [~] 15.2 Implement score entry and history module
+    - `ScoreEntryForm`: date picker + score input (1–45); submit to `POST /api/scores`; show field-level validation errors
+    - `ScoreHistoryList`: display up to 5 entries newest-first; inline edit (PUT) and delete buttons
+    - _Requirements: 3.1, 3.2, 3.3, 3.6, 3.7, 9.2_
+  - [~] 15.3 Implement charity selection module
+    - Display selected charity name and current contribution percentage
+    - Allow changing charity via search modal (PUT /api/subscriber/charity)
+    - Allow adjusting contribution percentage (PUT /api/subscriber/charity/contribution)
+    - _Requirements: 6.3, 6.4, 6.5, 9.3_
+  - [~] 15.4 Implement draw participation summary module
+    - Display count of draws entered and next upcoming draw date
+    - List draw history with results (matched numbers, tier, prize amount)
+    - _Requirements: 9.4_
+  - [~] 15.5 Implement winnings overview module
+    - Display total amount won across all draws
+    - List outstanding prizes with current payment state and verification upload button for pending winners
+    - _Requirements: 8.1, 8.2, 9.5_
+
+- [~] 16. Frontend — Admin Dashboard (all 5 sections)
+  - [~] 16.1 Implement user management section
+    - Searchable table of all subscribers with subscription state and selected charity
+    - Inline edit for profile fields; admin subscription state override dropdown
+    - Admin score edit view per subscriber
+    - _Requirements: 10.1, 10.2, 10.3, 10.4_
+  - [~] 16.2 Implement draw management section
+    - Draw mode selector (random / algorithmic); simulate button showing preview results
+    - Publish button (disabled if draw already published this month); published draw list
+    - _Requirements: 11.1, 11.2, 11.3, 11.4_
+  - [~] 16.3 Implement charity management section
+    - Charity list with add/edit/delete actions; delete shows affected subscriber count on conflict
+    - Featured charity toggle (radio-style — only one active at a time)
+    - Charity event management (add/remove events per charity)
+    - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5_
+  - [~] 16.4 Implement winner verification and payouts section
+    - Winners table per draw: match tier, prize amount, payment state, screenshot preview
+    - Approve / reject actions with rejection reason input; payment proof upload
+    - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5_
+  - [~] 16.5 Implement reports and analytics section
+    - Total registered vs active subscriber counts
+    - Prize pool per draw; charity contribution totals with date range selector
+    - Draw statistics: winners per tier, jackpot carry-forward history
+    - _Requirements: 14.1, 14.2, 14.3, 14.4_
+
+- [~] 17. Frontend — Public pages
+  - [~] 17.1 Implement homepage
+    - Hero section with subscribe CTA linking to `/register`
+    - Featured charity spotlight section (GET /api/charities/featured)
+    - Brief draw mechanics summary with link to `/how-it-works`
+    - _Requirements: 16.1, 16.2, 16.3_
+  - [~] 17.2 Implement charity listing and profile pages
+    - `/charities`: grid of charity cards with search input and filter controls
+    - `/charities/:id`: full profile with description, image gallery, and upcoming events list
+    - Independent donation button on profile page
+    - _Requirements: 7.1, 7.2, 7.3, 7.4, 16.4_
+  - [~] 17.3 Implement how-it-works page
+    - Static content explaining subscription model, score entry, draw mechanics, prize tiers, and charity contribution
+    - _Requirements: 16.5_
+
+- [~] 18. Checkpoint — Frontend complete
+  - Ensure all pages render correctly, protected routes redirect properly, and React Query caching works, ask the user if questions arise.
+
+- [~] 19. Security hardening
+  - [~] 19.1 Apply server-side security middleware
+    - Add `helmet()` to Express app for secure HTTP headers (CSP, X-Frame-Options, HSTS)
+    - Configure `cors` restricted to `VITE_APP_URL` origin
+    - Confirm `express-rate-limit` is applied to all `/api/auth/*` routes
+    - _Requirements: 17.2, 17.5_
+  - [ ]* 19.2 Write property test for password hashing (Property 20)
+    - **Property 20: Password hashing is one-way with per-user salt**
+    - **Validates: Requirements 17.4**
+  - [ ]* 19.3 Write property test for input sanitisation (Property 21)
+    - **Property 21: User input sanitisation prevents injection payloads**
+    - **Validates: Requirements 17.5**
+
+- [~] 20. Property-based tests — fast-check full suite
+  - [~] 20.1 Set up fast-check test infrastructure
+    - Install `fast-check` and `jest` (or `vitest`) in `server/`
+    - Create `server/src/__tests__/properties/` directory
+    - Configure test runner to tag tests with `// Feature: golf-charity-platform, Property N: <text>` comments
+    - Run minimum 100 iterations per property (`fc.configureGlobal({ numRuns: 100 })`)
+  - [ ]* 20.2 Implement remaining property tests not yet written inline
+    - Consolidate any properties not covered by inline sub-tasks (Properties 1–21) into `server/src/__tests__/properties/` test files
+    - Ensure every property references its property number and requirement clause
+    - _Requirements: 1.2, 1.4, 1.7, 2.5, 2.9, 3.1, 3.3, 3.4, 3.5, 3.6, 3.8, 4.2, 4.3, 4.5, 4.6, 5.2, 5.3, 5.4, 5.5, 5.6, 6.2, 7.2, 7.4, 8.5, 12.3, 12.4, 17.4, 17.5_
+
+- [~] 21. End-to-end tests (Playwright)
+  - [~] 21.1 Set up Playwright
+    - Install `@playwright/test`; configure `playwright.config.ts` with base URL pointing to local dev server
+    - Create `e2e/` directory at repo root
+  - [ ]* 21.2 Write E2E test: full registration → subscription → score entry → draw participation flow
+    - Navigate to `/register`; complete all 4 steps; mock Stripe Checkout success callback
+    - Enter 3 score entries; verify they appear in dashboard newest-first
+    - Verify draw participation count increments after draw publish
+    - _Requirements: 1.1, 2.3, 3.5, 9.2, 9.4_
+  - [ ]* 21.3 Write E2E test: admin draw publish flow
+    - Log in as admin; navigate to `/admin/draws`; select algorithmic mode; run simulation; publish draw
+    - Verify draw appears in subscriber's draw history
+    - _Requirements: 11.1, 11.2, 11.3_
+  - [ ]* 21.4 Write E2E test: winner verification flow
+    - Simulate a winner; navigate to `/dashboard`; upload verification screenshot
+    - Log in as admin; approve verification; verify payment state updates to `verified`
+    - _Requirements: 8.1, 8.2, 8.3, 13.2, 13.3_
+
+- [~] 22. Deployment — Vercel + Supabase, environment variables, final checks
+  - [~] 22.1 Configure Vercel deployment
+    - Set all required environment variables in Vercel project settings: `DATABASE_URL`, `JWT_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `VITE_API_URL`
+    - Verify `vercel.json` rewrites route `/api/*` to the Express serverless entry point
+    - Add HSTS header configuration to `vercel.json` headers block
+    - _Requirements: 17.2, 17.3_
+  - [~] 22.2 Configure Supabase project
+    - Run all migration SQL files against the Supabase project database
+    - Create Supabase Storage bucket for verification screenshots and payment proofs with appropriate access policies
+    - Register Stripe webhook endpoint pointing to the deployed `/api/subscriptions/webhook` URL
+    - _Requirements: 8.2, 13.5_
+  - [~] 22.3 Final pre-launch checks
+    - Confirm all `.env.example` variables are documented and no secrets are committed to source control
+    - Verify HTTPS is enforced on all Vercel preview and production URLs
+    - Run full test suite (`vitest --run` for unit/property tests, `playwright test` for E2E) against staging environment
+    - _Requirements: 17.2, 17.3, 17.5_
+
+- [~] 23. Final checkpoint — all tests pass
+  - Ensure all unit, property-based, and E2E tests pass against the deployed staging environment, ask the user if questions arise.
+
+## Notes
+
+- Tasks marked with `*` are optional and can be skipped for a faster MVP
+- Each task references specific requirements for traceability
+- Property tests use fast-check with a minimum of 100 iterations per property
+- All 21 correctness properties from the design document are covered across tasks 3–19
+- Checkpoints at tasks 4, 7, 10, 13, 18, and 23 ensure incremental validation
