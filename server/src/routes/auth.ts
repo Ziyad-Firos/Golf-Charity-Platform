@@ -3,7 +3,7 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { body, validationResult } from 'express-validator';
-import pool from '../db';
+import { pool } from '../db/client';
 
 const router = Router();
 
