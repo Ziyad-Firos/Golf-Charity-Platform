@@ -2,8 +2,18 @@ import axios from 'axios';
 
 const API_BASE_URL = (import.meta as any).env.VITE_API_URL || 'http://localhost:3001';
 
+// For production, ensure we have the full URL
+const getApiBaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    // Browser environment
+    const origin = window.location.origin;
+    return API_BASE_URL.startsWith('http') ? API_BASE_URL : `${origin}${API_BASE_URL}`;
+  }
+  return API_BASE_URL;
+};
+
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: getApiBaseUrl(),
   headers: {
     'Content-Type': 'application/json',
   },
