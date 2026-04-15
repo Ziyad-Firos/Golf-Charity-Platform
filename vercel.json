@@ -3,11 +3,17 @@
   "builds": [
     {
       "src": "server/package.json",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "outputDirectory": "dist"
+      }
     },
     {
-      "src": "client/package.json",
-      "use": "@vercel/static"
+      "src": "client/package.json", 
+      "use": "@vercel/static",
+      "config": {
+        "outputDirectory": "dist"
+      }
     }
   ],
   "routes": [
@@ -17,7 +23,7 @@
     },
     {
       "src": "/(.*)",
-      "dest": "/client"
+      "dest": "/client/index.html"
     }
   ]
 }
