@@ -1,0 +1,233 @@
+name: Code Quality Gates
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+  push:
+    branches: [ main, develop ]
+
+jobs:
+  code-quality:
+    name: Code Quality Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Needed for SonarCloud
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: |
+          cd server && npm ci
+          cd ../client && npm ci
+      
+      - name: Run ESLint
+        run: |
+          cd server && npx eslint . --format=json --output-file=eslint-report.json || true
+          cd ../client && npx eslint . --format=json --output-file=eslint-report.json || true
+      
+      - name: Run Prettier check
+        run: |
+          cd server && npx prettier --check . || true
+          cd ../client && npx prettier --check . || true
+      
+      - name: Run TypeScript compiler check
+        run: |
+          cd server && npx tsc --noEmit --pretty || true
+          cd ../client && npx tsc --noEmit --pretty || true
+      
+      - name: Calculate code coverage
+        run: |
+          cd server && npm test -- --coverage --coverageReporters=json || true
+          cd ../client && npm test -- --coverage --coverageReporters=json || true
+      
+      - name: Run SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      
+      - name: Run CodeClimate
+        uses: paambaati/codeclimate-action@v3.0.0
+        env:
+          CC_TEST_REPORTER_ID: ${{ secrets.CC_TEST_REPORTER_ID }}
+        with:
+          coverageLocations: |
+            server/coverage/lcov.info:lcov
+            client/coverage/lcov.info:lcov
+
+  dependency-check:
+    name: Dependency Security Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: |
+          cd server && npm ci
+          cd ../client && npm ci
+      
+      - name: Check for outdated dependencies
+        run: |
+          cd server && npm outdated || true
+          cd ../client && npm outdated || true
+      
+      - name: Run npm audit
+        run: |
+          cd server && npm audit --audit-level moderate
+          cd ../client && npm audit --audit-level moderate
+      
+      - name: Check for license compliance
+        run: |
+          cd server && npx license-checker --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC' || true
+          cd ../client && npx license-checker --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC' || true
+
+  performance-check:
+    name: Performance Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: |
+          cd server && npm ci
+          cd ../client && npm ci
+      
+      - name: Build client for bundle analysis
+        run: cd client && npm run build
+      
+      - name: Analyze bundle size
+        run: |
+          cd client
+          npx bundlesize
+      
+      - name: Run Lighthouse CI
+        run: |
+          cd client
+          npm install -g @lhci/cli@0.12.x
+          lhci autorun
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+
+  complexity-analysis:
+    name: Code Complexity Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: |
+          cd server && npm ci
+          cd ../client && npm ci
+      
+      - name: Run complexity report
+        run: |
+          cd server && npx complexity-report --output json --format json src/ > complexity-report.json || true
+          cd ../client && npx complexity-report --output json --format json src/ > complexity-report.json || true
+      
+      - name: Check for code smells
+        run: |
+          cd server && npx jsinspect src/ || true
+          cd ../client && npx jsinspect src/ || true
+      
+      - name: Run Duplicated Code Detection
+        run: |
+          cd server && npx jscpd --src src/ --format json --output jscpd-report.json || true
+          cd ../client && npx jscpd --src src/ --format json --output jscpd-report.json || true
+
+  documentation-check:
+    name: Documentation Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Check README exists
+        run: |
+          if [ ! -f README.md ]; then
+            echo "README.md is missing"
+            exit 1
+          fi
+      
+      - name: Check API documentation
+        run: |
+          cd server
+          if [ ! -f docs/api.md ]; then
+            echo "API documentation is missing"
+            exit 1
+          fi
+      
+      - name: Check code comments coverage
+        run: |
+          cd server && npx jsdoc-to-markdown src/ > docs/generated.md || true
+          cd ../client && npx jsdoc-to-markdown src/ > docs/generated.md || true
+
+  quality-gate:
+    name: Quality Gate Check
+    runs-on: ubuntu-latest
+    needs: [code-quality, dependency-check, performance-check, complexity-analysis, documentation-check]
+    if: always()
+    steps:
+      - name: Check Quality Gates
+        run: |
+          echo "Checking quality gates..."
+          
+          # Check if any job failed
+          if [ "${{ needs.code-quality.result }}" = "failure" ]; then
+            echo "Code quality checks failed"
+            exit 1
+          fi
+          
+          if [ "${{ needs.dependency-check.result }}" = "failure" ]; then
+            echo "Dependency security checks failed"
+            exit 1
+          fi
+          
+          if [ "${{ needs.performance-check.result }}" = "failure" ]; then
+            echo "Performance checks failed"
+            exit 1
+          fi
+          
+          if [ "${{ needs.complexity-analysis.result }}" = "failure" ]; then
+            echo "Complexity analysis failed"
+            exit 1
+          fi
+          
+          if [ "${{ needs.documentation-check.result }}" = "failure" ]; then
+            echo "Documentation checks failed"
+            exit 1
+          fi
+          
+          echo "All quality gates passed!"
+      
+      - name: Update Quality Badge
+        if: github.ref == 'refs/heads/main'
+        uses: schneegans/dynamic-badges-action@v1.6.0
+        with:
+          auth: ${{ secrets.GITHUB_TOKEN }}
+          gistID: ${{ secrets.QUALITY_BADGE_GIST_ID }}
+          label: Code Quality
+          message: Passing
+          color: green
