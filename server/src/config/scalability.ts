@@ -59,58 +59,58 @@ export interface ScalabilityConfig {
 
 export const scalabilityConfig: ScalabilityConfig = {
   clustering: {
-    enabled: config.get('CLUSTERING_ENABLED') === 'true',
-    workers: parseInt(config.get('CLUSTER_WORKERS') || '0') || require('os').cpus().length,
-    maxMemory: parseInt(config.get('CLUSTER_MAX_MEMORY') || '1024'),
-    gracefulShutdownTimeout: parseInt(config.get('GRACEFUL_SHUTDOWN_TIMEOUT') || '30000')
+    enabled: config.get('nodeEnv') === 'production',
+    workers: parseInt(process.env.CLUSTER_WORKERS || '0') || require('os').cpus().length,
+    maxMemory: parseInt(process.env.CLUSTER_MAX_MEMORY || '1024'),
+    gracefulShutdownTimeout: parseInt(process.env.GRACEFUL_SHUTDOWN_TIMEOUT || '30000')
   },
   loadBalancing: {
-    enabled: config.get('LOAD_BALANCING_ENABLED') === 'true',
-    strategy: (config.get('LOAD_BALANCING_STRATEGY') || 'round-robin') as any,
-    healthCheckInterval: parseInt(config.get('HEALTH_CHECK_INTERVAL') || '30000'),
-    maxRetries: parseInt(config.get('MAX_RETRIES') || '3'),
-    retryDelay: parseInt(config.get('RETRY_DELAY') || '1000')
+    enabled: process.env.LOAD_BALANCING_ENABLED === 'true',
+    strategy: (process.env.LOAD_BALANCING_STRATEGY || 'round-robin') as any,
+    healthCheckInterval: parseInt(process.env.HEALTH_CHECK_INTERVAL || '30000'),
+    maxRetries: parseInt(process.env.MAX_RETRIES || '3'),
+    retryDelay: parseInt(process.env.RETRY_DELAY || '1000')
   },
   rateLimiting: {
-    enabled: config.get('RATE_LIMITING_ENABLED') === 'true',
-    globalLimit: parseInt(config.get('GLOBAL_RATE_LIMIT') || '1000'),
-    perIPLimit: parseInt(config.get('PER_IP_RATE_LIMIT') || '100'),
-    windowMs: parseInt(config.get('RATE_LIMIT_WINDOW_MS') || '900000'),
-    skipSuccessfulRequests: config.get('RATE_LIMIT_SKIP_SUCCESS') === 'true',
-    skipFailedRequests: config.get('RATE_LIMIT_SKIP_FAILED') === 'true'
+    enabled: process.env.RATE_LIMITING_ENABLED === 'true',
+    globalLimit: parseInt(process.env.GLOBAL_RATE_LIMIT || '1000'),
+    perIPLimit: parseInt(process.env.PER_IP_RATE_LIMIT || '100'),
+    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'),
+    skipSuccessfulRequests: process.env.RATE_LIMIT_SKIP_SUCCESS === 'true',
+    skipFailedRequests: process.env.RATE_LIMIT_SKIP_FAILED === 'true'
   },
   caching: {
-    enabled: config.get('CACHING_ENABLED') === 'true',
-    strategy: (config.get('CACHE_STRATEGY') || 'memory') as any,
-    ttl: parseInt(config.get('CACHE_TTL') || '300000'),
-    maxSize: parseInt(config.get('CACHE_MAX_SIZE') || '1000'),
-    compressionEnabled: config.get('CACHE_COMPRESSION_ENABLED') === 'true'
+    enabled: process.env.CACHING_ENABLED === 'true',
+    strategy: (process.env.CACHE_STRATEGY || 'memory') as any,
+    ttl: parseInt(process.env.CACHE_TTL || '300000'),
+    maxSize: parseInt(process.env.CACHE_MAX_SIZE || '1000'),
+    compressionEnabled: process.env.CACHE_COMPRESSION_ENABLED === 'true'
   },
   database: {
     connectionPool: {
-      min: parseInt(config.get('DB_POOL_MIN') || '2'),
-      max: parseInt(config.get('DB_POOL_MAX') || '10'),
-      idleTimeoutMillis: parseInt(config.get('DB_IDLE_TIMEOUT') || '30000'),
-      acquireTimeoutMillis: parseInt(config.get('DB_ACQUIRE_TIMEOUT') || '60000')
+      min: parseInt(process.env.DB_POOL_MIN || '2'),
+      max: parseInt(process.env.DB_POOL_MAX || '10'),
+      idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || '30000'),
+      acquireTimeoutMillis: parseInt(process.env.DB_ACQUIRE_TIMEOUT || '60000')
     },
-    readReplicas: (config.get('DB_READ_REPLICAS') || '').split(',').filter(Boolean),
+    readReplicas: (process.env.DB_READ_REPLICAS || '').split(',').filter(Boolean),
     sharding: {
-      enabled: config.get('DB_SHARDING_ENABLED') === 'true',
-      strategy: (config.get('DB_SHARDING_STRATEGY') || 'hash') as any,
-      shardCount: parseInt(config.get('DB_SHARD_COUNT') || '4')
+      enabled: process.env.DB_SHARDING_ENABLED === 'true',
+      strategy: (process.env.DB_SHARDING_STRATEGY || 'hash') as any,
+      shardCount: parseInt(process.env.DB_SHARD_COUNT || '4')
     }
   },
   monitoring: {
-    enabled: config.get('MONITORING_ENABLED') === 'true',
-    metricsInterval: parseInt(config.get('METRICS_INTERVAL') || '60000'),
-    healthCheckInterval: parseInt(config.get('HEALTH_CHECK_INTERVAL') || '30000'),
-    alertingEnabled: config.get('ALERTING_ENABLED') === 'true'
+    enabled: process.env.MONITORING_ENABLED === 'true',
+    metricsInterval: parseInt(process.env.METRICS_INTERVAL || '60000'),
+    healthCheckInterval: parseInt(process.env.HEALTH_CHECK_INTERVAL || '30000'),
+    alertingEnabled: process.env.ALERTING_ENABLED === 'true'
   },
   session: {
-    store: (config.get('SESSION_STORE') || 'memory') as any,
-    ttl: parseInt(config.get('SESSION_TTL') || '86400000'),
-    rolling: config.get('SESSION_ROLLING') === 'true',
-    touchAfter: parseInt(config.get('SESSION_TOUCH_AFTER') || '0')
+    store: (process.env.SESSION_STORE || 'memory') as any,
+    ttl: parseInt(process.env.SESSION_TTL || '86400000'),
+    rolling: process.env.SESSION_ROLLING === 'true',
+    touchAfter: parseInt(process.env.SESSION_TOUCH_AFTER || '0')
   }
 };
 
