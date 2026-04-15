@@ -10,11 +10,15 @@ const app = express();
 // Security headers
 app.use(helmet());
 
-// CORS — restrict to client origin
+// CORS — allow all origins in production, restrict in development
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: process.env.NODE_ENV === 'production' 
+      ? true 
+      : (process.env.CLIENT_URL || 'http://localhost:5173'),
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
 
