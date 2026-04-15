@@ -8,6 +8,8 @@ import { errorHandler, notFound } from './middleware/error.middleware';
 import { requestIdMiddleware } from './utils/logger';
 import { logger } from './utils/logger';
 import { metrics, metricsMiddleware } from './utils/metrics';
+import { checkDatabaseHealth, getPoolStats } from './db/client';
+import { databaseMonitor } from './db/monitoring';
 
 const app = express();
 
@@ -54,23 +56,91 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // Health check
-app.get('/api/health', (req, res) => {
-  const healthCheck = {
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development',
-    memory: process.memoryUsage(),
-    version: process.env.npm_package_version || '1.0.0',
-    requestId: req.requestId
-  };
+app.get('/api/health', async (req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    const healthCheck = {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      environment: process.env.NODE_ENV || 'development',
+      memory: process.memoryUsage(),
+      version: process.env.npm_package_version || '1.0.0',
+      requestId: req.requestId,
+      responseTime: Date.now() - startTime
+    };
 
-  logger.info('Health check accessed', {
-    requestId: req.requestId,
-    ip: req.ip
-  });
+    // Check database health
+    const dbHealth = await checkDatabaseHealth();
+    const poolStats = getPoolStats();
+    
+    healthCheck.database = {
+      connected: dbHealth.connected,
+      connectionCount: dbHealth.totalConnections,
+      idleConnections: dbHealth.idleConnections,
+      waitingConnections: dbHealth.waitingConnections,
+      averageQueryTime: dbHealth.averageQueryTime
+    };
 
-  res.json(healthCheck);
+    healthCheck.connectionPool = poolStats;
+
+    logger.info('Health check accessed', {
+      requestId: req.requestId,
+      ip: req.ip,
+      dbConnected: dbHealth.connected
+    });
+
+    // Return 200 if all is well, 503 if database is down
+    const statusCode = dbHealth.connected ? 200 : 503;
+    res.status(statusCode).json(healthCheck);
+  } catch (error) {
+    logger.error('Health check failed', {
+      requestId: req.requestId,
+      error: (error as Error).message
+    });
+
+    res.status(503).json({
+      status: 'error',
+      timestamp: new Date().toISOString(),
+      error: 'Health check failed',
+      requestId: req.requestId,
+      responseTime: Date.now() - startTime
+    });
+  }
+});
+
+// Database health check endpoint
+app.get('/api/health/database', async (req, res) => {
+  try {
+    const detailedReport = await databaseMonitor.getDetailedReport();
+    const healthCheck = await databaseMonitor.runHealthCheck();
+    
+    logger.info('Database health check accessed', {
+      requestId: req.requestId,
+      status: healthCheck.status,
+      score: healthCheck.overallScore
+    });
+
+    res.json({
+      ...healthCheck,
+      ...detailedReport,
+      timestamp: new Date().toISOString(),
+      requestId: req.requestId
+    });
+  } catch (error) {
+    logger.error('Database health check failed', {
+      requestId: req.requestId,
+      error: (error as Error).message
+    });
+
+    res.status(500).json({
+      status: 'error',
+      error: 'Database health check failed',
+      timestamp: new Date().toISOString(),
+      requestId: req.requestId
+    });
+  }
 });
 
 // Metrics endpoint (for monitoring)
