@@ -28,7 +28,11 @@
     "src/middleware/auth.middleware.ts",
     "src/utils/logger.ts",
     "src/db/client.ts",
-    "src/monitoring/business-metrics.ts"
+    "src/monitoring/business-metrics.ts",
+    "src/config/scalability.ts",
+    "src/routes/index.ts",
+    "src/app.ts",
+    "src/index.ts"
   ],
   "exclude": [
     "node_modules", 

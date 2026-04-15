@@ -162,7 +162,7 @@ export class DatabaseMonitor {
       
       // Get metrics from our own monitoring
       const apiMetrics = metrics.getMetrics();
-      const dbMetrics = apiMetrics.endpoints['DB_SELECT'] || apiMetrics.endpoints['DB_INSERT'] || { count: 0, averageResponseTime: 0 };
+      const dbMetrics = (apiMetrics as any).endpoints?.['DB_SELECT'] || (apiMetrics as any).endpoints?.['DB_INSERT'] || { count: 0, averageResponseTime: 0 };
       
       return {
         averageQueryTime: dbMetrics.averageResponseTime || 0,

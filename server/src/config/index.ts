@@ -94,14 +94,6 @@ class Config {
     }
   }
 
-  get(): AppConfig {
-    return { ...this.config };
-  }
-
-  get<K extends keyof AppConfig>(key: K): AppConfig[K] {
-    return this.config[key];
-  }
-
   isDevelopment(): boolean {
     return this.config.nodeEnv === 'development';
   }

@@ -67,7 +67,7 @@ app.get('/api/health', async (req, res) => {
       environment: process.env.NODE_ENV || 'development',
       memory: process.memoryUsage(),
       version: process.env.npm_package_version || '1.0.0',
-      requestId: req.requestId,
+      requestId: (req as any).requestId,
       responseTime: Date.now() - startTime
     };
 
@@ -75,7 +75,7 @@ app.get('/api/health', async (req, res) => {
     const dbHealth = await checkDatabaseHealth();
     const poolStats = getPoolStats();
     
-    healthCheck.database = {
+    (healthCheck as any).database = {
       connected: dbHealth.connected,
       connectionCount: dbHealth.totalConnections,
       idleConnections: dbHealth.idleConnections,
@@ -83,10 +83,10 @@ app.get('/api/health', async (req, res) => {
       averageQueryTime: dbHealth.averageQueryTime
     };
 
-    healthCheck.connectionPool = poolStats;
+    (healthCheck as any).connectionPool = poolStats;
 
     logger.info('Health check accessed', {
-      requestId: req.requestId,
+      requestId: (req as any).requestId,
       ip: req.ip,
       dbConnected: dbHealth.connected
     });
@@ -96,7 +96,7 @@ app.get('/api/health', async (req, res) => {
     res.status(statusCode).json(healthCheck);
   } catch (error) {
     logger.error('Health check failed', {
-      requestId: req.requestId,
+      requestId: (req as any).requestId,
       error: (error as Error).message
     });
 
@@ -104,7 +104,7 @@ app.get('/api/health', async (req, res) => {
       status: 'error',
       timestamp: new Date().toISOString(),
       error: 'Health check failed',
-      requestId: req.requestId,
+      requestId: (req as any).requestId,
       responseTime: Date.now() - startTime
     });
   }
@@ -117,7 +117,7 @@ app.get('/api/health/database', async (req, res) => {
     const healthCheck = await databaseMonitor.runHealthCheck();
     
     logger.info('Database health check accessed', {
-      requestId: req.requestId,
+      requestId: (req as any).requestId,
       status: healthCheck.status,
       score: healthCheck.overallScore
     });
@@ -126,11 +126,11 @@ app.get('/api/health/database', async (req, res) => {
       ...healthCheck,
       ...detailedReport,
       timestamp: new Date().toISOString(),
-      requestId: req.requestId
+      requestId: (req as any).requestId
     });
   } catch (error) {
     logger.error('Database health check failed', {
-      requestId: req.requestId,
+      requestId: (req as any).requestId,
       error: (error as Error).message
     });
 
@@ -138,7 +138,7 @@ app.get('/api/health/database', async (req, res) => {
       status: 'error',
       error: 'Database health check failed',
       timestamp: new Date().toISOString(),
-      requestId: req.requestId
+      requestId: (req as any).requestId
     });
   }
 });
@@ -149,11 +149,11 @@ app.get('/api/metrics', (req, res) => {
     ...metrics.getMetrics(),
     endpoints: metrics.getEndpointMetrics(),
     timestamp: new Date().toISOString(),
-    requestId: req.requestId
+    requestId: (req as any).requestId
   };
 
   logger.info('Metrics accessed', {
-    requestId: req.requestId,
+    requestId: (req as any).requestId,
     ip: req.ip
   });
 
