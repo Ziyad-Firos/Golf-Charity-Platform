@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { pool } from '../db/client';
+import { query } from '../db/client';
 
 type NextFunction = (err?: any) => void;
 
@@ -9,15 +9,22 @@ declare global {
   namespace Express {
     interface Request {
       user?: {
+        sub: string;
         id: string;
         email: string;
         role: string;
       };
+      ip?: string;
+    }
+    interface Response {
+      cookie(name: string, value: string, options?: any): void;
+      clearCookie(name: string, options?: any): void;
     }
   }
 }
 
 export interface AuthUser {
+  sub: string;
   id: string;
   email: string;
   role: string;
@@ -30,6 +37,10 @@ interface JwtPayload {
   iat: number;
   exp: number;
 }
+
+export type AuthRequest = Request & {
+  user: AuthUser;
+};
 
 export function authenticateToken(req: Request, res: Response, next: NextFunction): void {
   const authHeader = req.headers['authorization'];
@@ -52,7 +63,7 @@ export function authenticateToken(req: Request, res: Response, next: NextFunctio
 
   try {
     const payload = jwt.verify(token, secret) as JwtPayload;
-    req.user = { id: payload.sub, email: payload.email, role: payload.role };
+    req.user = { sub: payload.sub, id: payload.sub, email: payload.email, role: payload.role };
     next();
   } catch (err: any) {
     if (err.name === 'TokenExpiredError') {
@@ -90,12 +101,12 @@ export async function requireActiveSubscription(
   }
 
   try {
-    const rows = await pool.query<{ subscription_state: string }>(
+    const rows = await query<{ subscription_state: string }>(
       'SELECT subscription_state FROM subscribers WHERE id = $1',
       [req.user.id]
     );
 
-    if (rows.rows.length === 0 || rows.rows[0].subscription_state !== 'active') {
+    if (rows.length === 0 || rows[0].subscription_state !== 'active') {
       res.status(403).json({
         error: { code: 'SUBSCRIPTION_INACTIVE', message: 'An active subscription is required to access this resource' },
       });
