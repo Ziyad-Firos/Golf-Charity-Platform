@@ -19,11 +19,15 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "/server/$1"
+      "dest": "/server"
+    },
+    {
+      "src": "/assets/(.*)",
+      "dest": "/client/assets/$1"
     },
     {
       "src": "/(.*)",
-      "dest": "/client/$1"
+      "dest": "/client/index.html"
     }
   ]
 }
