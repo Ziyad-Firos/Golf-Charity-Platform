@@ -307,14 +307,17 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
   try {
     const result = await query(
       'SELECT id, email, first_name, last_name, role, subscription_state, stripe_customer_id, charity_id, charity_contribution_pct, currency, locale, created_at, updated_at FROM subscribers WHERE id = $1',
-      [req.user!.id]
+      [req.user!.sub]
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+    if (result.length === 0) {
+      res.status(404).json({
+        error: { code: 'AUTH_USER_NOT_FOUND', message: 'User not found' },
+      });
+      return;
     }
 
-    const user = result.rows[0];
+    const user = result[0];
     res.json({
       id: user.id,
       email: user.email,
@@ -329,14 +332,16 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
       locale: user.locale,
       createdAt: user.created_at,
       updatedAt: user.updated_at
-      currency: (user as any).currency,
-      locale: (user as any).locale,
-      createdAt: (user as any).created_at,
-      updatedAt: (user as any).updated_at
     });
   } catch (error) {
-    console.error('Profile error:', error);
-    res.status(500).json({ error: 'Failed to fetch profile' });
+    logger.error('Get user profile failed', {
+      userId: req.user?.sub,
+      error: (error as Error).message,
+      ip: req.ip
+    });
+    res.status(500).json({
+      error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' },
+    });
   }
 });
 
