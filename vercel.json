@@ -5,25 +5,25 @@
       "src": "server/package.json",
       "use": "@vercel/node",
       "config": {
-        "outputDirectory": "dist"
+        "includeFiles": "dist/**"
       }
     },
     {
       "src": "client/package.json", 
       "use": "@vercel/static",
       "config": {
-        "outputDirectory": "dist"
+        "distDir": "dist"
       }
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "/server"
+      "dest": "/server/$1"
     },
     {
       "src": "/(.*)",
-      "dest": "/client/index.html"
+      "dest": "/client/$1"
     }
   ]
 }
