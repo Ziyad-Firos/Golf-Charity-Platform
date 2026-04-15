@@ -268,7 +268,7 @@ router.get('/me', authenticateToken, async (req: AuthRequest, res: Response): Pr
   try {
     const rows = await query<SubscriberRow>(
       'SELECT id, email, first_name, last_name, role, subscription_state FROM subscribers WHERE id = $1',
-      [req.user!.sub]
+      [req.user!.id]
     );
 
     if (rows.length === 0) {
@@ -307,7 +307,7 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
   try {
     const result = await query(
       'SELECT id, email, first_name, last_name, role, subscription_state, stripe_customer_id, charity_id, charity_contribution_pct, currency, locale, created_at, updated_at FROM subscribers WHERE id = $1',
-      [req.user!.sub]
+      [req.user!.id]
     );
 
     if (result.length === 0) {

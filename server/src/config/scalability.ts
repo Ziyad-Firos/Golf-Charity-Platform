@@ -59,7 +59,7 @@ export interface ScalabilityConfig {
 
 export const scalabilityConfig: ScalabilityConfig = {
   clustering: {
-    enabled: config.get('nodeEnv') === 'production',
+    enabled: process.env.NODE_ENV === 'production',
     workers: parseInt(process.env.CLUSTER_WORKERS || '0') || require('os').cpus().length,
     maxMemory: parseInt(process.env.CLUSTER_MAX_MEMORY || '1024'),
     gracefulShutdownTimeout: parseInt(process.env.GRACEFUL_SHUTDOWN_TIMEOUT || '30000')

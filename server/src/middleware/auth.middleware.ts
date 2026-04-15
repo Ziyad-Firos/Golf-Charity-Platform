@@ -38,8 +38,9 @@ interface JwtPayload {
   exp: number;
 }
 
-export type AuthRequest = Request & {
-  user: AuthUser;
+export interface AuthRequest extends Request {
+  user?: AuthUser;
+  ip: string;
 };
 
 export function authenticateToken(req: Request, res: Response, next: NextFunction): void {

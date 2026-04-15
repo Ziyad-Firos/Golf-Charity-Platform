@@ -125,9 +125,9 @@ export class ProductionConfigManager {
     
     return {
       server: {
-        port: config.get('port'),
+        port: parseInt(process.env.PORT || '3001'),
         host: process.env.HOST || '0.0.0.0',
-        trustProxy: isProduction,
+        trustProxy: process.env.NODE_ENV === 'production',
         keepAliveTimeout: parseInt(process.env.KEEP_ALIVE_TIMEOUT || '65000'),
         headersTimeout: parseInt(process.env.HEADERS_TIMEOUT || '66000')
       },
