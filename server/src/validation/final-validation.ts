@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger';
+import { query } from '../db/client';
 
 export interface ValidationResult {
   status: 'pass' | 'fail' | 'warning';
@@ -57,7 +58,6 @@ export class FinalValidator {
     const issues: string[] = [];
     
     try {
-      const { query } = require('../db/client');
       await query('SELECT 1');
     } catch (error) {
       issues.push(`Database connection failed: ${(error as Error).message}`);

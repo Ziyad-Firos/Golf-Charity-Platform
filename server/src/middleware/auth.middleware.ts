@@ -9,7 +9,6 @@ declare global {
   namespace Express {
     interface Request {
       user?: {
-        sub: string;
         id: string;
         email: string;
         role: string;
@@ -24,7 +23,6 @@ declare global {
 }
 
 export interface AuthUser {
-  sub: string;
   id: string;
   email: string;
   role: string;
@@ -64,7 +62,7 @@ export function authenticateToken(req: Request, res: Response, next: NextFunctio
 
   try {
     const payload = jwt.verify(token, secret) as JwtPayload;
-    req.user = { sub: payload.sub, id: payload.sub, email: payload.email, role: payload.role };
+    req.user = { id: payload.sub, email: payload.email, role: payload.role };
     next();
   } catch (err: any) {
     if (err.name === 'TokenExpiredError') {
@@ -102,7 +100,7 @@ export async function requireActiveSubscription(
   }
 
   try {
-    const rows = await query<{ subscription_state: string }>(
+    const rows = await query(
       'SELECT subscription_state FROM subscribers WHERE id = $1',
       [req.user.id]
     );

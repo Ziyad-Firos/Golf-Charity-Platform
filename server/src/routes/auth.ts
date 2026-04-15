@@ -72,7 +72,7 @@ router.post('/register', [
 
   try {
     // Check for existing email
-    const existing = await query<{ id: string }>(
+    const existing = await query(
       'SELECT id FROM subscribers WHERE email = $1',
       [email]
     );
@@ -85,7 +85,7 @@ router.post('/register', [
 
     const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
 
-    const inserted = await query<SubscriberRow>(
+    const inserted = await query(
       `INSERT INTO subscribers (email, password_hash, first_name, last_name)
        VALUES ($1, $2, $3, $4)
        RETURNING id, email, first_name, last_name, role`,
@@ -142,7 +142,7 @@ router.post('/login', [
   const { email, password } = req.body as { email: string; password: string };
 
   try {
-    const rows = await query<SubscriberRow>(
+    const rows = await query(
       'SELECT id, email, first_name, last_name, role, password_hash FROM subscribers WHERE email = $1',
       [email]
     );
@@ -217,7 +217,7 @@ router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
 
     const decoded = jwt.verify(refreshToken, secret) as { sub: string };
     
-    const rows = await query<SubscriberRow>(
+    const rows = await query(
       'SELECT id, email, role FROM subscribers WHERE id = $1',
       [decoded.sub]
     );
@@ -266,7 +266,7 @@ router.post('/logout', async (req: Request, res: Response): Promise<void> => {
 // GET /api/auth/me
 router.get('/me', authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const rows = await query<SubscriberRow>(
+    const rows = await query(
       'SELECT id, email, first_name, last_name, role, subscription_state FROM subscribers WHERE id = $1',
       [req.user!.id]
     );
