@@ -292,7 +292,7 @@ router.get('/me', authenticateToken, async (req: AuthRequest, res: Response): Pr
     });
   } catch (error) {
     logger.error('Get user profile failed', {
-      userId: req.user?.sub,
+      userId: req.user?.id,
       error: (error as Error).message,
       ip: req.ip
     });
@@ -335,7 +335,7 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
     });
   } catch (error) {
     logger.error('Get user profile failed', {
-      userId: req.user?.sub,
+      userId: req.user?.id,
       error: (error as Error).message,
       ip: req.ip
     });
