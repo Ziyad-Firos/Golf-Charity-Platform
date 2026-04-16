@@ -1,0 +1,10 @@
+# Force Vercel to ignore cache and rebuild
+node_modules
+.git
+dist
+build
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
