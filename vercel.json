@@ -1,9 +1,10 @@
 {
   "version": 2,
   "framework": null,
-  "buildCommand": "npm run build --workspace=server",
+  "buildCommand": "npm run build:server",
   "outputDirectory": "server/dist",
   "installCommand": "npm install --workspaces",
+  "functionsDirectory": "api",
   "routes": [
     {
       "src": "/api/(.*)",
