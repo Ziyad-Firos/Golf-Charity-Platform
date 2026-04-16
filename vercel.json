@@ -1,4 +1,22 @@
 {
   "version": 2,
-  "framework": null
+  "framework": null,
+  "buildCommand": "cd server && npm install && npm run build",
+  "outputDirectory": "server/dist",
+  "installCommand": "cd server && npm install",
+  "functions": {
+    "server/api/index.ts": {
+      "maxDuration": 30
+    }
+  },
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/server/api/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/server/api/index.ts"
+    }
+  ]
 }
