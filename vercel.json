@@ -1,21 +1,4 @@
 {
   "version": 2,
-  "buildCommand": "cd server && npm install && npm run build",
-  "outputDirectory": "server/dist",
-  "installCommand": "cd server && npm install",
-  "framework": null,
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/server/api/$1"
-    },
-    {
-      "src": "/assets/(.*)",
-      "dest": "/client/assets/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/client/index.html"
-    }
-  ]
+  "framework": null
 }
