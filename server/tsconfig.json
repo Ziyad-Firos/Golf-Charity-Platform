@@ -32,11 +32,15 @@
     "src/config/scalability.ts",
     "src/routes/index.ts",
     "src/app.ts",
-    "src/index.ts"
+    "src/index.ts",
+    "src/api/index.ts",
+    "src/api/health.ts",
+    "src/api/test.ts"
   ],
   "exclude": [
     "node_modules", 
     "dist", 
-    "**/*.test.ts"
+    "**/*.test.ts",
+    "src/db/migrations.ts"
   ]
 }
