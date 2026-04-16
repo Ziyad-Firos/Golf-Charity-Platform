@@ -5,8 +5,8 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "nodemon --exec ts-node src/index.ts",
-    "build": "tsc",
-    "build:server": "tsc",
+    "build": "npx tsc",
+    "build:server": "npx tsc",
     "start": "node dist/index.js",
     "test": "vitest --run",
     "test:watch": "vitest",
